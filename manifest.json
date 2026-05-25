@@ -1,0 +1,10 @@
+{
+  "id": "sera-plugin-mapa",
+  "name": "Localizador Geográfico 🗺️",
+  "version": "1.0.0",
+  "description": "Visualiza ubicaciones y coordenadas en OpenStreetMap de forma interactiva directamente desde tus celdas y genera mapas combinados.",
+  "author": "WolfTeI",
+  "icon": "map",
+  "entry": "dist/index.js",
+  "style": "dist/style.css"
+}

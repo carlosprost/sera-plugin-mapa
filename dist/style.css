@@ -1,0 +1,204 @@
+/* ============================================================
+   ESTILOS PARA LOCALIZADOR GEOGRÁFICO 🗺️ (SERA v4)
+   ============================================================ */
+
+.badge-mapa-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(0, 188, 212, 0.08);
+  border: 1px solid rgba(0, 188, 212, 0.25);
+  color: #22d3ee;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 6px rgba(0, 188, 212, 0.05);
+
+  &:hover {
+    background: rgba(0, 188, 212, 0.15);
+    border-color: #00bcd4;
+    box-shadow: 0 0 10px rgba(0, 188, 212, 0.2);
+  }
+}
+
+/* ─── MODAL GLASSMORPHISM MAP ─── */
+.mapa-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(10, 16, 23, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: mapaFadeIn 0.25s ease-out;
+}
+
+.mapa-modal {
+  background: #0f1722;
+  border: 1px solid rgba(0, 188, 212, 0.35);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 188, 212, 0.15);
+  border-radius: 16px;
+  width: 780px;
+  max-width: 92vw;
+  height: 520px;
+  max-height: 85vh;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  color: #e2e8f0;
+}
+
+.mapa-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 12px;
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .modal-icon {
+      font-size: 26px;
+      width: 26px;
+      height: 26px;
+      color: #00bcd4;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+  }
+
+  .btn-close-modal {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 1.3rem;
+    line-height: 1;
+    padding: 4px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: #f8fafc;
+    }
+  }
+}
+
+.mapa-modal-body {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  overflow: hidden;
+  height: 100%;
+}
+
+.mapa-frame-container {
+  flex: 1.8;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #070b10;
+  position: relative;
+
+  iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+}
+
+.mapa-pins-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 12px;
+
+  h4 {
+    margin: 0 0 6px 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .pin-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: rgba(0, 188, 212, 0.05);
+      border-color: rgba(0, 188, 212, 0.25);
+    }
+
+    &.active {
+      background: rgba(0, 188, 212, 0.1);
+      border-color: #00bcd4;
+    }
+
+    .pin-label {
+      font-weight: 600;
+      font-size: 0.85rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pin-coords {
+      font-family: monospace;
+      font-size: 0.72rem;
+      color: #00bcd4;
+      opacity: 0.85;
+    }
+  }
+
+  .no-pins {
+    color: #64748b;
+    font-style: italic;
+    font-size: 0.8rem;
+    text-align: center;
+    padding: 20px 0;
+  }
+}
+
+@keyframes mapaFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
