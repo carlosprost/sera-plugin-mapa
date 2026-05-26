@@ -80,11 +80,24 @@
         }) || campos[0];
 
         const idClave = `id_${rawName.toLowerCase()}`;
-        const registros = await api.data.getContenido(rawName);
+        
+        // 1. Obtener registros seleccionados mediante los checkboxes en caliente
+        let registros = await api.data.getSelectedRegistros(rawName);
+        let usandoSeleccionados = true;
+
+        if (!registros || registros.length === 0) {
+          // Si no seleccionó nada, por defecto cargamos toda la tabla completa
+          registros = await api.data.getContenido(rawName);
+          usandoSeleccionados = false;
+        }
 
         if (registros.length === 0) {
           api.env.showNotification('La tabla no contiene ningún registro para graficar.', 'warning');
           return;
+        }
+
+        if (usandoSeleccionados) {
+          api.env.showNotification(`📍 Graficando únicamente los ${registros.length} registros seleccionados.`, 'success');
         }
 
         // Consultar si hay una configuración guardada para esta tabla
