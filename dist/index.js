@@ -73,12 +73,6 @@
       try {
         const campos = await api.data.getCampos(rawName);
         
-        // Buscar el campo de coordenadas
-        const campoCoord = campos.find(c => {
-          const lower = (c.Field || c.nombre || '').toLowerCase();
-          return columnasCoordenadas.includes(lower);
-        });
-
         // Identificar el campo más probable de etiqueta (nombre, expediente, id, etc.)
         const campoEtiqueta = campos.find(c => {
           const lower = (c.Field || c.nombre || '').toLowerCase();
@@ -88,34 +82,13 @@
         const idClave = `id_${rawName.toLowerCase()}`;
         const registros = await api.data.getContenido(rawName);
 
-        if (!campoCoord) {
-          // Si no tiene columnas de coordenadas directas, abrimos el selector de campos para geolocalizar por dirección
-          abrirModalSelectorCampos(activeTab.textContent.trim(), campos, registros, idClave, campoEtiqueta);
+        if (registros.length === 0) {
+          api.env.showNotification('La tabla no contiene ningún registro para graficar.', 'warning');
           return;
         }
 
-        const pines = [];
-
-        registros.forEach((r) => {
-          const valCoord = r[campoCoord.Field || campoCoord.nombre];
-          const coords = parsearCoordenadas(valCoord);
-          if (coords) {
-            const etiqueta = r[campoEtiqueta.Field || campoEtiqueta.nombre] || `Registro #${r[idClave] || r['id'] || ''}`;
-            pines.push({
-              id: r[idClave] || r['id'] || Math.random().toString(),
-              etiqueta: etiqueta,
-              lat: coords.lat,
-              lng: coords.lng
-            });
-          }
-        });
-
-        if (pines.length === 0) {
-          api.env.showNotification('No se encontraron registros con coordenadas válidas para graficar.', 'warning');
-          return;
-        }
-
-        abrirModalMapaUnificado(activeTab.textContent.trim(), pines);
+        // Siempre abrimos el selector/configurador para permitir flexibilidad y re-escaneo
+        abrirModalSelectorCampos(activeTab.textContent.trim(), campos, registros, idClave, campoEtiqueta);
 
       } catch (err) {
         console.error('[Mapa] Error al procesar visualizador:', err);
@@ -128,7 +101,7 @@
   // G. MODAL VISUALIZADOR DE MAPA EMBEBIDO
   // ─────────────────────────────────────────────
   
-  const abrirModalMapaUnificado = (tituloTabla, pines) => {
+  const abrirModalMapaUnificado = (tituloTabla, pines, campos, registros, idClave, campoEtiqueta) => {
     // Limpiar modal viejo si quedó por algún motivo
     const modalExistente = document.getElementById('mapa-unified-modal');
     if (modalExistente) modalExistente.remove();
@@ -159,7 +132,12 @@
             <span class="modal-icon">🗺️</span>
             <h3>Mapa de Registros — ${tituloTabla.toUpperCase()}</h3>
           </div>
-          <button class="btn-close-modal" id="mapa-btn-close-modal">✕</button>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <button class="btn-configure-mapa" id="mapa-btn-reconfigure" title="Cambiar columnas o volver a escanear" style="background:rgba(0,188,212,0.1); border:1px solid rgba(0,188,212,0.3); color:#22d3ee; padding:6px 12px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px; transition:all 0.2s; display:flex; align-items:center; gap:4px;">
+              <span>⚙️</span> Configurar
+            </button>
+            <button class="btn-close-modal" id="mapa-btn-close-modal">✕</button>
+          </div>
         </div>
         <div class="mapa-modal-body">
           <div class="mapa-frame-container">
@@ -181,6 +159,12 @@
     // Cerrar modal
     document.getElementById('mapa-btn-close-modal').addEventListener('click', () => {
       overlay.remove();
+    });
+
+    // Re-configurar / Re-escanear
+    document.getElementById('mapa-btn-reconfigure').addEventListener('click', () => {
+      overlay.remove();
+      abrirModalSelectorCampos(tituloTabla, campos, registros, idClave, campoEtiqueta);
     });
 
     // Interacción al hacer click en los pines de la lista
@@ -206,7 +190,7 @@
   };
 
   // ─────────────────────────────────────────────
-  // H. SELECTOR DE COLUMNAS PARA DIRECCIÓN POSTAL
+  // H. CONFIGURADOR / SELECTOR DE CAMPOS GEOGRÁFICOS
   // ─────────────────────────────────────────────
   
   const abrirModalSelectorCampos = (tituloTabla, campos, registros, idClave, campoEtiqueta) => {
@@ -218,37 +202,201 @@
     overlay.className = 'mapa-modal-overlay';
     overlay.id = modalId;
 
-    // Filtrar campos útiles (de texto o numéricos comunes, no ids ni adjuntos ni de sistema)
+    const rawName = tituloTabla.toLowerCase().split(' ').join('_');
+    const configKey = `map-config-${rawName}`;
+    
+    // 1. Intentar cargar configuración previa de localStorage
+    let savedConfig = null;
+    try {
+      const rawSaved = localStorage.getItem(configKey);
+      if (rawSaved) savedConfig = JSON.parse(rawSaved);
+    } catch (e) {
+      console.warn('[Mapa] Error al leer configuración previa:', e);
+    }
+
+    // Filtrar campos útiles (excluir de sistema o de control)
     const camposUtiles = campos.filter(c => {
       const name = (c.Field || c.nombre || '').toLowerCase();
       return name !== idClave && name !== 'id' && !name.startsWith('sera_') && name !== 'actions';
     });
 
-    const optionsHtml = camposUtiles.map(c => `
-      <label class="mapa-checkbox-option" style="display:flex; align-items:center; gap:8px; margin-bottom:8px; cursor:pointer;">
-        <input type="checkbox" class="mapa-field-checkbox" value="${c.Field || c.nombre}" style="width:16px; height:16px;">
-        <span style="font-size:13px; text-transform:uppercase; font-weight:600; color:#cbd5e1;">${(c.Field || c.nombre).split('_').join(' ')}</span>
-      </label>
-    `).join('');
+    // 2. Si no hay configuración guardada, aplicar autodetección inteligente
+    if (!savedConfig) {
+      savedConfig = {
+        tipo: 'coordenadas', // 'coordenadas' | 'direccion'
+        coordTipo: 'juntas', // 'juntas' | 'separadas'
+        columnaCoord: '',
+        columnaLat: '',
+        columnaLng: '',
+        columnaCalle: '',
+        columnaLocalidad: '',
+        columnaProvincia: '',
+        columnaPais: ''
+      };
+
+      // Autodetectar columna única de coordenadas
+      const colCoordDetectada = camposUtiles.find(c => {
+        const lower = (c.Field || c.nombre || '').toLowerCase();
+        return ['coordenadas', 'coord', 'gps', 'lat_lng', 'ubicacion'].includes(lower);
+      });
+      // Autodetectar latitud/longitud por separado
+      const colLatDetectada = camposUtiles.find(c => {
+        const lower = (c.Field || c.nombre || '').toLowerCase();
+        return ['latitud', 'lat', 'coord_lat'].includes(lower);
+      });
+      const colLngDetectada = camposUtiles.find(c => {
+        const lower = (c.Field || c.nombre || '').toLowerCase();
+        return ['longitud', 'lng', 'lon', 'coord_lng'].includes(lower);
+      });
+
+      if (colCoordDetectada) {
+        savedConfig.columnaCoord = colCoordDetectada.Field || colCoordDetectada.nombre;
+      } else if (colLatDetectada && colLngDetectada) {
+        savedConfig.coordTipo = 'separadas';
+        savedConfig.columnaLat = colLatDetectada.Field || colLatDetectada.nombre;
+        savedConfig.columnaLng = colLngDetectada.Field || colLngDetectada.nombre;
+      } else {
+        // Autodetectar campos de dirección postal
+        const colCalleDetectada = camposUtiles.find(c => {
+          const lower = (c.Field || c.nombre || '').toLowerCase();
+          return ['calle', 'direccion', 'dir', 'domicilio', 'postal'].includes(lower);
+        });
+        const colLocDetectada = camposUtiles.find(c => {
+          const lower = (c.Field || c.nombre || '').toLowerCase();
+          return ['localidad', 'ciudad', 'municipio', 'partido'].includes(lower);
+        });
+        const colProvDetectada = camposUtiles.find(c => {
+          const lower = (c.Field || c.nombre || '').toLowerCase();
+          return ['provincia', 'estado', 'jurisdiccion', 'prov'].includes(lower);
+        });
+        const colPaisDetectada = camposUtiles.find(c => {
+          const lower = (c.Field || c.nombre || '').toLowerCase();
+          return ['pais', 'nacion', 'country'].includes(lower);
+        });
+
+        if (colCalleDetectada) {
+          savedConfig.tipo = 'direccion';
+          savedConfig.columnaCalle = colCalleDetectada.Field || colCalleDetectada.nombre;
+          if (colLocDetectada) savedConfig.columnaLocalidad = colLocDetectada.Field || colLocDetectada.nombre;
+          if (colProvDetectada) savedConfig.columnaProvincia = colProvDetectada.Field || colProvDetectada.nombre;
+          if (colPaisDetectada) savedConfig.columnaPais = colPaisDetectada.Field || colPaisDetectada.nombre;
+        }
+      }
+    }
+
+    // Armar las opciones para los combos de campos
+    const buildOptionsHtml = (selectedVal) => {
+      const nullOpt = `<option value="">[Ninguno]</option>`;
+      const listOpts = camposUtiles.map(c => {
+        const val = c.Field || c.nombre;
+        const label = val.split('_').join(' ').toUpperCase();
+        return `<option value="${val}" ${val === selectedVal ? 'selected' : ''}>${label}</option>`;
+      }).join('');
+      return nullOpt + listOpts;
+    };
 
     overlay.innerHTML = `
-      <div class="mapa-modal" style="max-width: 440px; height: auto; min-height: 280px; padding: 24px; display:flex; flex-direction:column; gap:16px;">
+      <div class="mapa-modal" style="max-width: 480px; height: auto; min-height: 420px; padding: 24px; display:flex; flex-direction:column; gap:16px;">
         <div class="mapa-modal-header" style="padding-bottom:12px; border-bottom: 1px solid rgba(255,255,255,0.08)">
           <div class="header-left">
             <span class="modal-icon">📍</span>
-            <h3 style="margin:0; font-size:16px; font-weight:600;">Georreferenciar por Dirección</h3>
+            <h3 style="margin:0; font-size:16px; font-weight:600;">Configurar Mapa — ${tituloTabla.toUpperCase()}</h3>
           </div>
           <button class="btn-close-modal" id="mapa-btn-close-selector">✕</button>
         </div>
         <div class="mapa-modal-body" style="display:flex; flex-direction:column; gap:16px; flex:none; height:auto; overflow:visible;">
-          <p style="margin:0; font-size:13px; opacity:0.8; line-height:1.4; color:#94a3b8;">
-            No detectamos columnas directas de coordenadas GPS en esta tabla. 
-            Marcá una o más columnas para componer la dirección postal (e.g. calle, altura, localidad):
-          </p>
-          <div class="mapa-options-container" style="max-height:160px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05); display:flex; flex-direction:column; gap:2px;">
-            ${optionsHtml}
+          
+          <!-- SECCIÓN 1: RADIO DE MÉTODO (COORDENADAS VS DIRECCIÓN) -->
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <span style="font-size:12px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:0.5px;">Método de Ubicación:</span>
+            <div style="display:flex; gap:20px; background:rgba(0,0,0,0.15); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.04);">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600; color:#cbd5e1;">
+                <input type="radio" name="mapa-radio-metodo" id="mapa-radio-metodo-coords" value="coordenadas" ${savedConfig.tipo === 'coordenadas' ? 'checked' : ''} style="accent-color:#00bcd4; width:16px; height:16px;">
+                Coordenadas GPS
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600; color:#cbd5e1;">
+                <input type="radio" name="mapa-radio-metodo" id="mapa-radio-metodo-dir" value="direccion" ${savedConfig.tipo === 'direccion' ? 'checked' : ''} style="accent-color:#00bcd4; width:16px; height:16px;">
+                Dirección Postal
+              </label>
+            </div>
           </div>
-          <button id="mapa-btn-geolocalizar" class="btn-mapa-geolocalizar" style="background:var(--sera-primary-color, #00bcd4); color:#000; border:none; padding:10px; border-radius:8px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; font-size:13px; transition:all 0.2s; height:40px; width:100%;">
+
+          <!-- SECCIÓN 2: CONTENEDOR COORDENADAS -->
+          <div id="mapa-container-metodo-coords" style="display:flex; flex-direction:column; gap:14px;">
+            <!-- Sub-tipo de Coordenadas -->
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <span style="font-size:12px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:0.5px;">Estructura de Coordenadas:</span>
+              <div style="display:flex; gap:20px; padding:2px 4px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#cbd5e1;">
+                  <input type="radio" name="mapa-radio-coords-tipo" id="mapa-radio-coords-juntas" value="juntas" ${savedConfig.coordTipo === 'juntas' ? 'checked' : ''} style="accent-color:#00bcd4; width:15px; height:15px;">
+                  En una columna (Ej: "lat, lng")
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#cbd5e1;">
+                  <input type="radio" name="mapa-radio-coords-tipo" id="mapa-radio-coords-separadas" value="separadas" ${savedConfig.coordTipo === 'separadas' ? 'checked' : ''} style="accent-color:#00bcd4; width:15px; height:15px;">
+                  Columnas separadas (Lat / Lng)
+                </label>
+              </div>
+            </div>
+
+            <!-- Seleccion de Columna Única (Juntas) -->
+            <div id="mapa-coords-juntas-selection" style="display:flex; flex-direction:column; gap:6px;">
+              <label style="font-size:13px; color:#cbd5e1; font-weight:600;">Columna de Coordenadas:</label>
+              <select id="mapa-select-col-coords" style="background:#1e293b; color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; outline:none; cursor:pointer; transition:all 0.2s;">
+                ${buildOptionsHtml(savedConfig.columnaCoord)}
+              </select>
+            </div>
+
+            <!-- Seleccion de Columnas Separadas (Lat/Lng) -->
+            <div id="mapa-coords-separadas-selection" style="display:flex; gap:12px; width:100%;">
+              <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+                <label style="font-size:13px; color:#cbd5e1; font-weight:600;">Columna Latitud:</label>
+                <select id="mapa-select-col-lat" style="background:#1e293b; color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; outline:none; cursor:pointer;">
+                  ${buildOptionsHtml(savedConfig.columnaLat)}
+                </select>
+              </div>
+              <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+                <label style="font-size:13px; color:#cbd5e1; font-weight:600;">Columna Longitud:</label>
+                <select id="mapa-select-col-lng" style="background:#1e293b; color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; outline:none; cursor:pointer;">
+                  ${buildOptionsHtml(savedConfig.columnaLng)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECCIÓN 3: CONTENEDOR DIRECCIÓN POSTAL (4 SELECTS) -->
+          <div id="mapa-container-metodo-dir" style="display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; gap:12px; width:100%;">
+              <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+                <label style="font-size:13px; color:#cbd5e1; font-weight:600;">Dirección / Calle:</label>
+                <select id="mapa-select-col-calle" style="background:#1e293b; color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; outline:none; cursor:pointer;">
+                  ${buildOptionsHtml(savedConfig.columnaCalle)}
+                </select>
+              </div>
+              <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+                <label style="font-size:13px; color:#cbd5e1; font-weight:600;">Localidad:</label>
+                <select id="mapa-select-col-localidad" style="background:#1e293b; color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; outline:none; cursor:pointer;">
+                  ${buildOptionsHtml(savedConfig.columnaLocalidad)}
+                </select>
+              </div>
+            </div>
+            <div style="display:flex; gap:12px; width:100%;">
+              <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+                <label style="font-size:13px; color:#cbd5e1; font-weight:600;">Provincia / Estado:</label>
+                <select id="mapa-select-col-provincia" style="background:#1e293b; color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; outline:none; cursor:pointer;">
+                  ${buildOptionsHtml(savedConfig.columnaProvincia)}
+                </select>
+              </div>
+              <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+                <label style="font-size:13px; color:#cbd5e1; font-weight:600;">País:</label>
+                <select id="mapa-select-col-pais" style="background:#1e293b; color:#f1f5f9; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; outline:none; cursor:pointer;">
+                  ${buildOptionsHtml(savedConfig.columnaPais)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- BOTÓN PRINCIPAL -->
+          <button id="mapa-btn-geolocalizar" class="btn-mapa-geolocalizar" style="background:var(--sera-primary-color, #00bcd4); color:#000; border:none; padding:10px; border-radius:8px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; font-size:13px; transition:all 0.2s; height:40px; width:100%; margin-top:8px;">
             <span>Ubicar Registros</span>
           </button>
         </div>
@@ -257,26 +405,154 @@
 
     document.body.appendChild(overlay);
 
+    // Lógica dinámica de visibilidad en caliente
+    const actualizarVisibilidadCampos = () => {
+      const metodoCoords = document.getElementById('mapa-radio-metodo-coords').checked;
+      const containerCoords = document.getElementById('mapa-container-metodo-coords');
+      const containerDir = document.getElementById('mapa-container-metodo-dir');
+
+      if (metodoCoords) {
+        containerCoords.style.display = 'flex';
+        containerDir.style.display = 'none';
+
+        const coordsJuntas = document.getElementById('mapa-radio-coords-juntas').checked;
+        const selectionJuntas = document.getElementById('mapa-coords-juntas-selection');
+        const selectionSeparadas = document.getElementById('mapa-coords-separadas-selection');
+
+        if (coordsJuntas) {
+          selectionJuntas.style.display = 'flex';
+          selectionSeparadas.style.display = 'none';
+        } else {
+          selectionJuntas.style.display = 'none';
+          selectionSeparadas.style.display = 'flex';
+        }
+      } else {
+        containerCoords.style.display = 'none';
+        containerDir.style.display = 'flex';
+      }
+    };
+
+    // Registrar los event listeners dinámicos de los radios
+    document.getElementById('mapa-radio-metodo-coords').addEventListener('change', actualizarVisibilidadCampos);
+    document.getElementById('mapa-radio-metodo-dir').addEventListener('change', actualizarVisibilidadCampos);
+    document.getElementById('mapa-radio-coords-juntas').addEventListener('change', actualizarVisibilidadCampos);
+    document.getElementById('mapa-radio-coords-separadas').addEventListener('change', actualizarVisibilidadCampos);
+
+    // Inicializar la vista
+    actualizarVisibilidadCampos();
+
+    // Agregar estilos de focus en caliente
+    const selectors = overlay.querySelectorAll('select');
+    selectors.forEach(sel => {
+      sel.addEventListener('focus', () => {
+        sel.style.borderColor = '#00bcd4';
+        sel.style.boxShadow = '0 0 8px rgba(0, 188, 212, 0.2)';
+      });
+      sel.addEventListener('blur', () => {
+        sel.style.borderColor = 'rgba(255,255,255,0.12)';
+        sel.style.boxShadow = 'none';
+      });
+    });
+
+    // Cerrar modal
     document.getElementById('mapa-btn-close-selector').addEventListener('click', () => {
       overlay.remove();
     });
 
+    // Acción principal: Ubicar Registros
     document.getElementById('mapa-btn-geolocalizar').addEventListener('click', async () => {
-      const checkboxes = document.querySelectorAll('.mapa-field-checkbox:checked');
-      if (checkboxes.length === 0) {
-        api.env.showNotification('Por favor, seleccioná al menos una columna de dirección.', 'warning');
-        return;
+      const esCoords = document.getElementById('mapa-radio-metodo-coords').checked;
+      const config = {
+        tipo: esCoords ? 'coordenadas' : 'direccion',
+        coordTipo: document.getElementById('mapa-radio-coords-juntas').checked ? 'juntas' : 'separadas',
+        columnaCoord: document.getElementById('mapa-select-col-coords').value,
+        columnaLat: document.getElementById('mapa-select-col-lat').value,
+        columnaLng: document.getElementById('mapa-select-col-lng').value,
+        columnaCalle: document.getElementById('mapa-select-col-calle').value,
+        columnaLocalidad: document.getElementById('mapa-select-col-localidad').value,
+        columnaProvincia: document.getElementById('mapa-select-col-provincia').value,
+        columnaPais: document.getElementById('mapa-select-col-pais').value
+      };
+
+      // Validaciones básicas de campos vacíos
+      if (config.tipo === 'coordenadas') {
+        if (config.coordTipo === 'juntas' && !config.columnaCoord) {
+          api.env.showNotification('Por favor, seleccioná la columna que contiene las coordenadas.', 'warning');
+          return;
+        }
+        if (config.coordTipo === 'separadas' && (!config.columnaLat || !config.columnaLng)) {
+          api.env.showNotification('Por favor, seleccioná ambas columnas (Latitud y Longitud).', 'warning');
+          return;
+        }
+      } else {
+        if (!config.columnaCalle) {
+          api.env.showNotification('Por favor, seleccioná al menos la columna de Dirección / Calle.', 'warning');
+          return;
+        }
       }
 
-      const camposSeleccionados = Array.from(checkboxes).map((cb) => cb.value);
+      // Guardar configuración en localStorage
+      try {
+        localStorage.setItem(configKey, JSON.stringify(config));
+      } catch (e) {
+        console.error('[Mapa] Error al persistir configuración:', e);
+      }
+
       overlay.remove();
 
-      // Iniciar proceso de Geocoding
-      await iniciarGeocodingProceso(tituloTabla, camposSeleccionados, registros, idClave, campoEtiqueta);
+      // Iniciar el procesamiento de registros en caliente
+      await procesarUbicacionRegistros(tituloTabla, config, registros, idClave, campoEtiqueta, campos);
     });
   };
 
-  const iniciarGeocodingProceso = async (tituloTabla, camposDireccion, registros, idClave, campoEtiqueta) => {
+  const procesarUbicacionRegistros = async (tituloTabla, config, registros, idClave, campoEtiqueta, campos) => {
+    if (config.tipo === 'coordenadas') {
+      const pines = [];
+      
+      registros.forEach((r) => {
+        let coords = null;
+        if (config.coordTipo === 'juntas') {
+          const valCoord = r[config.columnaCoord];
+          coords = parsearCoordenadas(valCoord);
+        } else {
+          // Coordenadas en columnas separadas
+          const valLat = r[config.columnaLat];
+          const valLng = r[config.columnaLng];
+          
+          if (valLat !== undefined && valLat !== null && valLng !== undefined && valLng !== null) {
+            const latFloat = parseFloat(String(valLat).trim());
+            const lngFloat = parseFloat(String(valLng).trim());
+            if (!isNaN(latFloat) && !isNaN(lngFloat) && latFloat >= -90 && latFloat <= 90 && lngFloat >= -180 && lngFloat <= 180) {
+              coords = { lat: latFloat, lng: lngFloat };
+            }
+          }
+        }
+
+        if (coords) {
+          const etiqueta = r[campoEtiqueta.Field || campoEtiqueta.nombre] || `Registro #${r[idClave] || r['id'] || ''}`;
+          pines.push({
+            id: r[idClave] || r['id'] || Math.random().toString(),
+            etiqueta: etiqueta,
+            lat: coords.lat,
+            lng: coords.lng
+          });
+        }
+      });
+
+      if (pines.length === 0) {
+        api.env.showNotification('No se encontraron registros con coordenadas válidas para graficar.', 'warning');
+        return;
+      }
+
+      api.env.showNotification(`Éxito: Se ubicaron ${pines.length} registros mediante coordenadas GPS.`, 'success');
+      abrirModalMapaUnificado(tituloTabla, pines, campos, registros, idClave, campoEtiqueta);
+    } else {
+      // Geolocalizar por dirección postal (con barra de progreso y cache persistente en localStorage)
+      await iniciarGeocodingProceso(tituloTabla, config, registros, idClave, campoEtiqueta, campos);
+    }
+  };
+
+  const iniciarGeocodingProceso = async (tituloTabla, config, registros, idClave, campoEtiqueta, campos) => {
     // Inyectar overlay de carga
     const loadingOverlay = document.createElement('div');
     loadingOverlay.className = 'mapa-modal-overlay';
@@ -293,6 +569,16 @@
     `;
     document.body.appendChild(loadingOverlay);
 
+    // 1. Cargar caché de geocodificación de localStorage
+    const cacheKey = 'sera-map-geocode-cache';
+    let geocodeCache = {};
+    try {
+      const rawCache = localStorage.getItem(cacheKey);
+      if (rawCache) geocodeCache = JSON.parse(rawCache);
+    } catch (e) {
+      console.warn('[Mapa] Error al leer caché de geocodificación:', e);
+    }
+
     const pines = [];
     const total = registros.length;
     let procesados = 0;
@@ -302,40 +588,61 @@
     for (let i = 0; i < total; i++) {
       const r = registros[i];
       
-      // Construir la dirección postal concatenando los valores de los campos elegidos en orden
-      const partesDireccion = camposDireccion.map(f => r[f]).filter(val => val !== undefined && val !== null && String(val).trim() !== '');
-      const direccionCompleta = partesDireccion.join(', ').trim();
+      // Componer la dirección concatenando calle, localidad, provincia, país
+      const partes = [
+        config.columnaCalle ? r[config.columnaCalle] : null,
+        config.columnaLocalidad ? r[config.columnaLocalidad] : null,
+        config.columnaProvincia ? r[config.columnaProvincia] : null,
+        config.columnaPais ? r[config.columnaPais] : null
+      ].filter(val => val !== undefined && val !== null && String(val).trim() !== '');
+
+      const direccionCompleta = partes.join(', ').trim();
 
       if (direccionCompleta) {
-        try {
-          // LLAMADA A NOMINATIM (OSM)
-          const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccionCompleta)}&limit=1`, {
-            headers: {
-              'Accept-Language': 'es'
-            }
+        // Consultar el caché de geolocalización
+        if (geocodeCache[direccionCompleta]) {
+          const coords = geocodeCache[direccionCompleta];
+          const etiqueta = r[campoEtiqueta.Field || campoEtiqueta.nombre] || `Registro #${r[idClave] || r['id'] || ''}`;
+          pines.push({
+            id: r[idClave] || r['id'] || Math.random().toString(),
+            etiqueta: `${etiqueta} (${direccionCompleta})`,
+            lat: coords.lat,
+            lng: coords.lng
           });
+        } else {
+          try {
+            // LLAMADA A NOMINATIM (OSM)
+            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccionCompleta)}&limit=1`, {
+              headers: {
+                'Accept-Language': 'es'
+              }
+            });
 
-          if (response.ok) {
-            const data = await response.json();
-            if (data && data.length > 0) {
-              const lat = parseFloat(data[0].lat);
-              const lng = parseFloat(data[0].lon);
-              
-              const etiqueta = r[campoEtiqueta.Field || campoEtiqueta.nombre] || `Registro #${r[idClave] || r['id'] || ''}`;
-              pines.push({
-                id: r[idClave] || r['id'] || Math.random().toString(),
-                etiqueta: `${etiqueta} (${direccionCompleta})`,
-                lat: lat,
-                lng: lng
-              });
+            if (response.ok) {
+              const data = await response.json();
+              if (data && data.length > 0) {
+                const lat = parseFloat(data[0].lat);
+                const lng = parseFloat(data[0].lon);
+                
+                // Guardar en el caché
+                geocodeCache[direccionCompleta] = { lat, lng };
+                
+                const etiqueta = r[campoEtiqueta.Field || campoEtiqueta.nombre] || `Registro #${r[idClave] || r['id'] || ''}`;
+                pines.push({
+                  id: r[idClave] || r['id'] || Math.random().toString(),
+                  etiqueta: `${etiqueta} (${direccionCompleta})`,
+                  lat: lat,
+                  lng: lng
+                });
+              }
             }
+          } catch (e) {
+            console.warn(`[Localizador Mapa] Error de geocoding para: ${direccionCompleta}`, e);
           }
-        } catch (e) {
-          console.warn(`[Localizador Mapa] Error de geocoding para: ${direccionCompleta}`, e);
-        }
 
-        // Delay para no saturar Nominatim (política OSM de 1 segundo de cooldown)
-        await delay(1000);
+          // Delay de 1 segundo estricto para Nominatim (cooldown de políticas de OSM)
+          await delay(1000);
+        }
       }
 
       procesados++;
@@ -346,6 +653,13 @@
       if (progressText) progressText.textContent = `Procesando ${procesados} de ${total} registros...`;
     }
 
+    // 2. Persistir caché actualizado en localStorage
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(geocodeCache));
+    } catch (e) {
+      console.warn('[Mapa] Error al persistir caché de geocodificación:', e);
+    }
+
     loadingOverlay.remove();
 
     if (pines.length === 0) {
@@ -354,11 +668,7 @@
     }
 
     api.env.showNotification(`Georreferenciación exitosa: Se ubicaron ${pines.length} de ${total} registros.`, 'success');
-    abrirModalUnifiedWithPines(tituloTabla, pines);
-  };
-
-  const abrirModalUnifiedWithPines = (tituloTabla, pines) => {
-    abrirModalMapaUnificado(tituloTabla, pines);
+    abrirModalMapaUnificado(tituloTabla, pines, campos, registros, idClave, campoEtiqueta);
   };
 
   // Notificación de carga

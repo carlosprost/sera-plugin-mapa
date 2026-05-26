@@ -231,3 +231,29 @@
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
 }
+
+/* --- NUEVOS SELECTORES Y RADIOS PREMIUM --- */
+.mapa-modal select {
+  background: #1e293b !important;
+  color: #f1f5f9 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-size: 13px !important;
+  width: 100% !important;
+  outline: none !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.mapa-modal select:focus {
+  border-color: #00bcd4 !important;
+  box-shadow: 0 0 8px rgba(0, 188, 212, 0.2) !important;
+}
+
+.btn-configure-mapa:hover {
+  background: rgba(0, 188, 212, 0.2) !important;
+  border-color: #00bcd4 !important;
+  box-shadow: 0 0 8px rgba(0, 188, 212, 0.1) !important;
+}
+
