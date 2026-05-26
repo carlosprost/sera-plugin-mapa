@@ -87,8 +87,23 @@
           return;
         }
 
-        // Siempre abrimos el selector/configurador para permitir flexibilidad y re-escaneo
-        abrirModalSelectorCampos(activeTab.textContent.trim(), campos, registros, idClave, campoEtiqueta);
+        // Consultar si hay una configuración guardada para esta tabla
+        const configKey = `map-config-${rawName}`;
+        let savedConfig = null;
+        try {
+          const rawSaved = localStorage.getItem(configKey);
+          if (rawSaved) savedConfig = JSON.parse(rawSaved);
+        } catch (e) {
+          console.warn('[Mapa] Error al leer configuración previa:', e);
+        }
+
+        if (savedConfig) {
+          // Si ya existe configuración, procesamos y abrimos directamente el mapa
+          await procesarUbicacionRegistros(activeTab.textContent.trim(), savedConfig, registros, idClave, campoEtiqueta, campos);
+        } else {
+          // Si no hay configuración previa, abrimos el configurador/selector
+          abrirModalSelectorCampos(activeTab.textContent.trim(), campos, registros, idClave, campoEtiqueta);
+        }
 
       } catch (err) {
         console.error('[Mapa] Error al procesar visualizador:', err);
@@ -133,7 +148,12 @@
             <h3>Mapa de Registros — ${tituloTabla.toUpperCase()}</h3>
           </div>
           <div style="display:flex; align-items:center; gap:12px;">
-            <button class="btn-configure-mapa" id="mapa-btn-reconfigure" title="Cambiar columnas o volver a escanear" style="background:rgba(0,188,212,0.1); border:1px solid rgba(0,188,212,0.3); color:#22d3ee; padding:6px 12px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px; transition:all 0.2s; display:flex; align-items:center; gap:4px;">
+            <!-- BOTÓN EXPORTAR KML (GOOGLE EARTH) -->
+            <button class="btn-export-kml" id="mapa-btn-export-kml" title="Exportar ubicaciones a Google Earth (KML)" style="background:rgba(76,175,80,0.1); border:1px solid rgba(76,175,80,0.3); color:#81c784; padding:6px 12px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px; transition:all 0.2s; display:flex; align-items:center; gap:4px; height:28px;">
+              <span>📥</span> Exportar KML
+            </button>
+            <!-- BOTÓN CONFIGURAR -->
+            <button class="btn-configure-mapa" id="mapa-btn-reconfigure" title="Cambiar columnas o volver a escanear" style="background:rgba(0,188,212,0.1); border:1px solid rgba(0,188,212,0.3); color:#22d3ee; padding:6px 12px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px; transition:all 0.2s; display:flex; align-items:center; gap:4px; height:28px;">
               <span>⚙️</span> Configurar
             </button>
             <button class="btn-close-modal" id="mapa-btn-close-modal">✕</button>
@@ -165,6 +185,55 @@
     document.getElementById('mapa-btn-reconfigure').addEventListener('click', () => {
       overlay.remove();
       abrirModalSelectorCampos(tituloTabla, campos, registros, idClave, campoEtiqueta);
+    });
+
+    // Exportar KML
+    document.getElementById('mapa-btn-export-kml').addEventListener('click', () => {
+      try {
+        let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+        kmlContent += `<kml xmlns="http://www.opengis.net/kml/2.2">\n`;
+        kmlContent += `  <Document>\n`;
+        kmlContent += `    <name>SERA — ${tituloTabla}</name>\n`;
+        kmlContent += `    <description>Registros georreferenciados exportados desde SERA</description>\n`;
+        
+        pines.forEach(p => {
+          // Escapar caracteres XML para evitar romper el archivo KML
+          const labelEscaped = String(p.etiqueta)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+
+          kmlContent += `    <Placemark>\n`;
+          kmlContent += `      <name>${labelEscaped}</name>\n`;
+          kmlContent += `      <description>Ubicación registrada en SERA</description>\n`;
+          kmlContent += `      <Point>\n`;
+          kmlContent += `        <coordinates>${p.lng},${p.lat},0</coordinates>\n`;
+          kmlContent += `      </Point>\n`;
+          kmlContent += `    </Placemark>\n`;
+        });
+        
+        kmlContent += `  </Document>\n`;
+        kmlContent += `</kml>\n`;
+
+        const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        const cleanTableName = tituloTabla.toLowerCase().split(' ').join('_');
+        a.download = `sera_mapa_${cleanTableName}.kml`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        api.env.showNotification('¡Archivo KML exportado correctamente! Listo para abrir en Google Earth.', 'success');
+      } catch (err) {
+        console.error('[Mapa] Error al exportar KML:', err);
+        api.env.showNotification('No se pudo exportar el archivo KML.', 'error');
+      }
     });
 
     // Interacción al hacer click en los pines de la lista
