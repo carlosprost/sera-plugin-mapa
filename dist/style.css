@@ -202,3 +202,32 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* --- ESTILOS ADICIONALES PARA GEOLOCALIZACIÓN POR DIRECCIÓN --- */
+.mapa-checkbox-option {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(0, 188, 212, 0.08);
+    border-color: rgba(0, 188, 212, 0.3);
+  }
+}
+
+.btn-mapa-geolocalizar:hover {
+  background: #22d3ee !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 188, 212, 0.3);
+}
+
+.btn-mapa-geolocalizar:active {
+  transform: translateY(0);
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
