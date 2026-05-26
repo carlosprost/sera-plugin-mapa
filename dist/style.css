@@ -48,10 +48,10 @@
   border: 1px solid rgba(0, 188, 212, 0.35);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 188, 212, 0.15);
   border-radius: 16px;
-  width: 780px;
-  max-width: 92vw;
-  height: 520px;
-  max-height: 85vh;
+  width: 1160px;
+  max-width: 95vw;
+  height: 680px;
+  max-height: 88vh;
   padding: 24px;
   display: flex;
   flex-direction: column;
