@@ -165,9 +165,9 @@
             <button class="btn-export-kml" id="mapa-btn-export-kml" title="Exportar ubicaciones a Google Earth (KML)" style="background:rgba(76,175,80,0.1); border:1px solid rgba(76,175,80,0.3); color:#81c784; padding:6px 12px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px; transition:all 0.2s; display:flex; align-items:center; gap:4px; height:28px;">
               <span>📥</span> Exportar KML
             </button>
-            <!-- BOTÓN CONFIGURAR -->
+            <!-- BOTÓN CARGAR DATOS -->
             <button class="btn-configure-mapa" id="mapa-btn-reconfigure" title="Cambiar columnas o volver a escanear" style="background:rgba(0,188,212,0.1); border:1px solid rgba(0,188,212,0.3); color:#22d3ee; padding:6px 12px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px; transition:all 0.2s; display:flex; align-items:center; gap:4px; height:28px;">
-              <span>⚙️</span> Configurar
+              <span>⚙️</span> Cargar Datos
             </button>
             <button class="btn-close-modal" id="mapa-btn-close-modal">✕</button>
           </div>
