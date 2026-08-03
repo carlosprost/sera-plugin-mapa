@@ -753,8 +753,6 @@
     abrirModalMapaUnificado(tituloTabla, pines, campos, registros, idClave, campoEtiqueta);
   };
 
-  // Notificación de carga
-  api.env.showNotification('🧩 Localizador Geográfico 🗺️ cargado correctamente', 'info');
   console.log('[Mapa] Plugin inicializado correctamente ✅');
 
 })();
